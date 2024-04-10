@@ -15,9 +15,6 @@ if platform.system() == "Darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 logger = loggerUtil.logger
-sam_dict = dict(
-    sam_masks=None, mask_image=None, cnet=None, orig_image=None, pad_mask=None
-)
 
 
 def tensor2pil(image):
@@ -108,13 +105,11 @@ class Cleaner:
     CATEGORY = "Cleaner"
 
     def generate(self, image, mask, model_type):
-        global sam_dict
-
-        if image.shape != mask.shape:
-            raise Exception("The sizes of the image and mask do not match")
-
         image = tensor2pil(image)
         mask = tensor2pil(mask)
+
+        if image.width != mask.width or image.height != mask.height:
+            raise Exception("The sizes of the image and mask do not match")
 
         logger.info(f"Loading model {model_type}")
 
@@ -124,8 +119,7 @@ class Cleaner:
             model = ModelManager(name=model_type, device=devices.device)
 
         init_image, mask = auto_resize_to_pil(image, mask)
-        print("[DEBUG]", devices.device)
-
+    
         init_image = np.array(init_image)
         mask = np.array(mask.convert("L"))
 

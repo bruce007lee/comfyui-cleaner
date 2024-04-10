@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageOps
 from .modules import devices, logger as loggerUtil
 import platform
 import os
@@ -7,6 +7,9 @@ import numpy as np
 from lama_cleaner.model_manager import ModelManager
 from lama_cleaner.schema import Config, HDStrategy, LDMSampler, SDSampler
 from torchvision import transforms
+from torchvision.transforms.functional import to_pil_image, to_tensor
+import torch
+
 
 if platform.system() == "Darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
@@ -17,9 +20,24 @@ sam_dict = dict(
 )
 
 
+def tensor2pil(image):
+    return Image.fromarray(
+        np.clip(255.0 * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
+    )
+
+
+# Convert to comfy
+def pil2comfy(img):
+    img = ImageOps.exif_transpose(img)
+    image = img.convert("RGB")
+    image = np.array(image).astype(np.float32) / 255.0
+    image = torch.from_numpy(image)[None,]
+    return image
+
+
 def auto_resize_to_pil(input_image, mask_image):
-    init_image = Image.fromarray(input_image).convert("RGB")
-    mask_image = Image.fromarray(mask_image).convert("RGB")
+    init_image = input_image.convert("RGB")
+    mask_image = mask_image.convert("RGB")
     assert (
         init_image.size == mask_image.size
     ), "The sizes of the image and mask do not match"
@@ -68,7 +86,7 @@ class Cleaner:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "mask": ("IMAGE",),
+                "mask": ("MASK",),
                 "model_type": (
                     [
                         "lama",
@@ -92,28 +110,24 @@ class Cleaner:
     def generate(self, image, mask, model_type):
         global sam_dict
 
-        if image is None or sam_dict["mask_image"] is None or mask is None:
-            logger.error("The image or mask does not exist")
-            return None
+        if image.shape != mask.shape:
+            raise Exception("The sizes of the image and mask do not match")
 
-        mask_image = sam_dict["mask_image"]
-        if image.shape != mask_image.shape:
-            logger.error("The sizes of the image and mask do not match")
-            return None
-
-        # save_mask_image(mask_image, cleaner_save_mask_chk)
+        image = tensor2pil(image)
+        mask = tensor2pil(mask)
 
         logger.info(f"Loading model {model_type}")
+
         if platform.system() == "Darwin":
             model = ModelManager(name=model_type, device=devices.cpu)
         else:
             model = ModelManager(name=model_type, device=devices.device)
 
-        init_image, mask_image = auto_resize_to_pil(image, mask_image)
-        width, height = init_image.size
+        init_image, mask = auto_resize_to_pil(image, mask)
+        print("[DEBUG]", devices.device)
 
         init_image = np.array(init_image)
-        mask_image = np.array(mask_image.convert("L"))
+        mask = np.array(mask.convert("L"))
 
         config = Config(
             ldm_steps=20,
@@ -127,16 +141,10 @@ class Cleaner:
             sd_sampler=SDSampler.ddim,
         )
 
-        output_image = model(image=init_image, mask=mask_image, config=config)
+        output_image = model(image=init_image, mask=mask, config=config)
         output_image = cv2.cvtColor(output_image.astype(np.uint8), cv2.COLOR_BGR2RGB)
         output_image = Image.fromarray(output_image)
 
-        # save_name = (
-        #     "_".join([ia_file_manager.savename_prefix, os.path.basename(model_type)])
-        #     + ".png"
-        # )
-        # save_name = os.path.join(ia_file_manager.outputs_dir, save_name)
-        # output_image.save(save_name)
-
+        output_image = pil2comfy(output_image)
         del model
-        return ([output_image],)
+        return (torch.cat([output_image], dim=0),)

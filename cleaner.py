@@ -12,6 +12,52 @@ from torchvision import transforms
 if platform.system() == "Darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
+sam_dict = dict(sam_masks=None, mask_image=None, cnet=None, orig_image=None, pad_mask=None)
+
+def auto_resize_to_pil(input_image, mask_image):
+    init_image = Image.fromarray(input_image).convert("RGB")
+    mask_image = Image.fromarray(mask_image).convert("RGB")
+    assert (
+        init_image.size == mask_image.size
+    ), "The sizes of the image and mask do not match"
+    width, height = init_image.size
+
+    new_height = (height // 8) * 8
+    new_width = (width // 8) * 8
+    if new_width < width or new_height < height:
+        if (new_width / width) < (new_height / height):
+            scale = new_height / height
+        else:
+            scale = new_width / width
+        resize_height = int(height * scale + 0.5)
+        resize_width = int(width * scale + 0.5)
+        if height != resize_height or width != resize_width:
+            logger.info(
+                f"resize: ({height}, {width}) -> ({resize_height}, {resize_width})"
+            )
+            init_image = transforms.functional.resize(
+                init_image,
+                (resize_height, resize_width),
+                transforms.InterpolationMode.LANCZOS,
+            )
+            mask_image = transforms.functional.resize(
+                mask_image,
+                (resize_height, resize_width),
+                transforms.InterpolationMode.LANCZOS,
+            )
+        if resize_height != new_height or resize_width != new_width:
+            logger.info(
+                f"center_crop: ({resize_height}, {resize_width}) -> ({new_height}, {new_width})"
+            )
+            init_image = transforms.functional.center_crop(
+                init_image, (new_height, new_width)
+            )
+            mask_image = transforms.functional.center_crop(
+                mask_image, (new_height, new_width)
+            )
+
+    return init_image, mask_image
+
 
 class Cleaner:
     @classmethod
@@ -82,40 +128,12 @@ class Cleaner:
         output_image = cv2.cvtColor(output_image.astype(np.uint8), cv2.COLOR_BGR2RGB)
         output_image = Image.fromarray(output_image)
 
-        save_name = (
-            "_".join([ia_file_manager.savename_prefix, os.path.basename(model_type)])
-            + ".png"
-        )
-        save_name = os.path.join(ia_file_manager.outputs_dir, save_name)
-        output_image.save(save_name)
+        # save_name = (
+        #     "_".join([ia_file_manager.savename_prefix, os.path.basename(model_type)])
+        #     + ".png"
+        # )
+        # save_name = os.path.join(ia_file_manager.outputs_dir, save_name)
+        # output_image.save(save_name)
 
         del model
         return [output_image]
-
-
-    def auto_resize_to_pil(input_image, mask_image):
-        init_image = Image.fromarray(input_image).convert("RGB")
-        mask_image = Image.fromarray(mask_image).convert("RGB")
-        assert init_image.size == mask_image.size, "The sizes of the image and mask do not match"
-        width, height = init_image.size
-
-        new_height = (height // 8) * 8
-        new_width = (width // 8) * 8
-        if new_width < width or new_height < height:
-            if (new_width / width) < (new_height / height):
-                scale = new_height / height
-            else:
-                scale = new_width / width
-            resize_height = int(height*scale+0.5)
-            resize_width = int(width*scale+0.5)
-            if height != resize_height or width != resize_width:
-                logger.info(f"resize: ({height}, {width}) -> ({resize_height}, {resize_width})")
-                init_image = transforms.functional.resize(init_image, (resize_height, resize_width), transforms.InterpolationMode.LANCZOS)
-                mask_image = transforms.functional.resize(mask_image, (resize_height, resize_width), transforms.InterpolationMode.LANCZOS)
-            if resize_height != new_height or resize_width != new_width:
-                logger.info(f"center_crop: ({resize_height}, {resize_width}) -> ({new_height}, {new_width})")
-                init_image = transforms.functional.center_crop(init_image, (new_height, new_width))
-                mask_image = transforms.functional.center_crop(mask_image, (new_height, new_width))
-
-        return init_image, mask_image
-

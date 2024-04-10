@@ -1,6 +1,5 @@
 from PIL import Image
-from modules.logger import logger
-from modules import devices
+from .modules import devices, logger as loggerUtil
 import platform
 import os
 import cv2
@@ -12,7 +11,11 @@ from torchvision import transforms
 if platform.system() == "Darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-sam_dict = dict(sam_masks=None, mask_image=None, cnet=None, orig_image=None, pad_mask=None)
+logger = loggerUtil.logger
+sam_dict = dict(
+    sam_masks=None, mask_image=None, cnet=None, orig_image=None, pad_mask=None
+)
+
 
 def auto_resize_to_pil(input_image, mask_image):
     init_image = Image.fromarray(input_image).convert("RGB")
@@ -80,8 +83,8 @@ class Cleaner:
             }
         }
 
-    RETURN_TYPES = "IMAGE"
-    RETURN_NAMES = "image"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
     FUNCTION = "generate"
 
     CATEGORY = "Cleaner"
@@ -136,4 +139,4 @@ class Cleaner:
         # output_image.save(save_name)
 
         del model
-        return [output_image]
+        return ([output_image],)

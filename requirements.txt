@@ -1,0 +1,6 @@
+numpy
+opencv-python
+lama-cleaner
+pillow
+diffusers
+transformers
